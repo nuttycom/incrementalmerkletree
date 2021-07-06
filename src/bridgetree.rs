@@ -28,7 +28,7 @@ impl Position {
     }
 
     /// Returns the altitude of the top of a binary tree containing
-    /// a number of nodes equal to the next power of two greater than 
+    /// a number of nodes equal to the next power of two greater than
     /// or equal to `self + 1`.
     fn max_altitude(&self) -> Altitude {
         Altitude(if self.0 == 0 {
@@ -51,17 +51,11 @@ impl Position {
             })
     }
 
-    /// Returns the number of ommers required to construct an authentication
-    /// path to the root of a merkle tree that has `self + 1` nodes.
-    pub fn altitudes_required_count(&self) -> usize {
-        self.altitudes_required().count()
-    }
-
-    /// Returns the altitude of each cousin and/or ommer required to construct 
-    /// an authentication path to the root of a merkle tree of depth `self + 1` 
+    /// Returns the altitude of each cousin and/or ommer required to construct
+    /// an authentication path to the root of a merkle tree of depth `self + 1`
     /// nodes.
     pub fn altitudes_required(&self) -> impl Iterator<Item = Altitude> + '_ {
-        (0..=(self.max_altitude() + 1).0)
+        (0..=self.max_altitude().0)
             .into_iter()
             .filter_map(move |i| {
                 if self.0 == 0 || self.0 & (1 << i) == 0 {
@@ -72,9 +66,9 @@ impl Position {
             })
     }
 
-    /// Returns the altitude of each cousin and/or ommer required to construct 
+    /// Returns the altitude of each cousin and/or ommer required to construct
     /// an authentication path to the root of a merkle tree containing 2^64
-    /// nodes. 
+    /// nodes.
     pub fn all_altitudes_required(&self) -> impl Iterator<Item = Altitude> + '_ {
         (0..64).into_iter().filter_map(move |i| {
             if self.0 == 0 || self.0 & (1 << i) == 0 {
@@ -86,7 +80,7 @@ impl Position {
     }
 
     /// Returns whether the binary tree having `self` as the position of the
-    /// rightmost leaf contains a perfect balanced tree of height 
+    /// rightmost leaf contains a perfect balanced tree of height
     /// `to_altitude + 1` that contains the aforesaid leaf, without requiring
     /// any empty leaves or internal nodes.
     pub fn is_complete(&self, to_altitude: Altitude) -> bool {
@@ -105,7 +99,7 @@ impl From<Position> for usize {
     }
 }
 
-/// A set of leaves of a Merkle tree. 
+/// A set of leaves of a Merkle tree.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Leaf<A> {
     Left(A),
@@ -114,7 +108,7 @@ pub enum Leaf<A> {
 
 /// A `[NonEmptyFrontier]` is a reduced representation of a Merkle tree,
 /// having either one or two leaf values, and then a set of hashes produced
-/// by the reduction of previously appended leaf values. 
+/// by the reduction of previously appended leaf values.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NonEmptyFrontier<H> {
     position: Position,
@@ -129,6 +123,18 @@ impl<H> NonEmptyFrontier<H> {
             position: Position::zero(),
             leaf: Leaf::Left(value),
             ommers: vec![],
+        }
+    }
+
+    pub fn from_parts(position: Position, leaf: Leaf<H>, ommers: Vec<H>) -> Option<Self> {
+        if position.ommer_altitudes().count() == ommers.len() {
+            Some(NonEmptyFrontier {
+                position,
+                leaf,
+                ommers,
+            })
+        } else {
+            None
         }
     }
 
@@ -189,7 +195,7 @@ impl<H: Hashable + Clone> NonEmptyFrontier<H> {
         };
 
         if carry.is_some() {
-            let mut new_ommers = Vec::with_capacity(self.position.altitudes_required_count() - 1);
+            let mut new_ommers = Vec::with_capacity(self.position.altitudes_required().count());
             for (ommer, ommer_lvl) in self.ommers.iter().zip(self.position.ommer_altitudes()) {
                 if let Some((carry_ommer, carry_lvl)) = carry.as_ref() {
                     if *carry_lvl == ommer_lvl {
@@ -325,17 +331,19 @@ impl<H, const DEPTH: u8> Frontier<H, DEPTH> {
         Frontier { frontier: None }
     }
 
-    /// Constructs a new frontier from a `[NonEmptyFrontier]`
+    /// Constructs a new non-empty frontier from is constituent
+    /// parts.
     ///
-    /// Returns `None` if the provided frontier exceeds the maximum
-    /// allowed depth.
-    pub fn new(frontier: NonEmptyFrontier<H>) -> Option<Self> {
-        if frontier.size() >= 1 << DEPTH {
-            None
-        } else {
-            Some(Frontier {
+    /// Returns `None` if the new frontier would exceed the maximum
+    /// allowed depth or if the list of ommers provided is not consistent
+    /// with the position of the leaf.
+    pub fn from_parts(position: Position, leaf: Leaf<H>, ommers: Vec<H>) -> Option<Self> {
+        if position.max_altitude().0 <= DEPTH {
+            NonEmptyFrontier::from_parts(position, leaf, ommers).map(|frontier| Frontier {
                 frontier: Some(frontier),
             })
+        } else {
+            None
         }
     }
 
@@ -391,7 +399,7 @@ impl<H: Hashable + Clone, const DEPTH: u8> crate::Frontier<H> for Frontier<H, DE
 /// Each AuthFragment stores part of the authentication path for the leaf at a particular position.
 /// Successive fragments may be concatenated to produce the authentication path up to one less than
 /// the maximum altitude of the Merkle frontier corresponding to the leaf at the specified
-/// position. Then, the authentication path may be completed by hashing any 
+/// position. Then, the authentication path may be completed by hashing any
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthFragment<A> {
     /// The position of the leaf for which this path fragment is being constructed.
@@ -416,7 +424,7 @@ impl<A> AuthFragment<A> {
     }
 
     /// Construct the successor fragment for this fragment to produce a new empty fragment
-    /// for the specified position. 
+    /// for the specified position.
     pub fn successor(&self) -> Self {
         AuthFragment {
             position: self.position,
@@ -426,7 +434,7 @@ impl<A> AuthFragment<A> {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.altitudes_observed >= self.position.altitudes_required_count()
+        self.altitudes_observed >= self.position.altitudes_required().count()
     }
 
     pub fn next_required_altitude(&self) -> Option<Altitude> {
@@ -1249,5 +1257,23 @@ mod tests {
         t.witness();
         t.witness();
         assert!(t.rewind());
+    }
+
+    #[test]
+    fn frontier_from_parts() {
+        assert!(
+            super::Frontier::<(), 0>::from_parts(Position::zero(), Leaf::Left(()), vec![])
+                .is_some()
+        );
+        assert!(super::Frontier::<(), 0>::from_parts(
+            Position::zero(),
+            Leaf::Right((), ()),
+            vec![]
+        )
+        .is_some());
+        assert!(
+            super::Frontier::<(), 0>::from_parts(Position::zero(), Leaf::Left(()), vec![()])
+                .is_none()
+        );
     }
 }
