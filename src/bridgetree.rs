@@ -452,7 +452,9 @@ impl<A> AuthFragment<A> {
 
 impl<A: Clone> AuthFragment<A> {
     pub fn fuse(&self, other: &Self) -> Option<Self> {
-        if self.position == other.position {
+        if self.position == other.position
+            && self.altitudes_observed + other.values.len() == other.altitudes_observed
+        {
             Some(AuthFragment {
                 position: self.position,
                 altitudes_observed: other.altitudes_observed,
