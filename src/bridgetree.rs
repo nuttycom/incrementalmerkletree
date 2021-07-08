@@ -158,6 +158,14 @@ impl<H> NonEmptyFrontier<H> {
     pub fn size(&self) -> usize {
         self.position.0 + 1
     }
+
+    pub fn leaf(&self) -> &Leaf<H> {
+        &self.leaf
+    }
+
+    pub fn ommers(&self) -> &Vec<H> {
+        &self.ommers
+    }
 }
 
 impl<H: Clone> NonEmptyFrontier<H> {
@@ -335,6 +343,10 @@ impl<H, const DEPTH: u8> Frontier<H, DEPTH> {
     /// Constructs a new empty frontier.
     pub fn empty() -> Self {
         Frontier { frontier: None }
+    }
+
+    pub fn value(&self) -> Option<&NonEmptyFrontier<H>> {
+        self.frontier.as_ref()
     }
 
     /// Constructs a new non-empty frontier from is constituent
