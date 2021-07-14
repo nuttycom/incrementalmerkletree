@@ -874,8 +874,10 @@ impl<H: Hashable + Hash + Eq + Clone, const DEPTH: u8> Tree<H> for BridgeTree<H,
             Some((leaf, succ)) => {
                 let blen = self.bridges.len();
                 let save_idx = blen - 1;
+
                 let is_duplicate_frontier =
                     blen > 1 && self.bridges[blen - 1].frontier == self.bridges[blen - 2].frontier;
+
                 self.saved.entry(leaf).or_insert(
                     // a duplicate frontier might occur because of a previously witnessed value
                     // where that value was subsequently removed. By saving at `save_idx - 1`
@@ -890,6 +892,12 @@ impl<H: Hashable + Hash + Eq + Clone, const DEPTH: u8> Tree<H> for BridgeTree<H,
                 // only push the successor if the bridge is not a duplicate
                 if !is_duplicate_frontier {
                     self.bridges.push(succ);
+
+                    // we can discard any old auth fragments that don't contain information
+                    // now that we've passed what we're tracking on to the next bridge.
+                    self.bridges[save_idx]
+                        .auth_fragments
+                        .retain(|_, v| !(v.altitudes_observed > 0 && v.values.is_empty()));
                 }
 
                 true
