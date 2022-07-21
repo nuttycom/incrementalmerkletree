@@ -1296,7 +1296,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::tests::{apply_operation, arb_operation};
+    use crate::testing::{apply_operation, arb_operation};
     use crate::Tree;
 
     #[test]

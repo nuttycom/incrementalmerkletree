@@ -251,7 +251,8 @@ pub(crate) fn lazy_root<H: Hashable + Clone>(mut leaves: Vec<H>) -> H {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::{compute_root_from_auth_path, SipHashable};
+    use crate::testing::SipHashable;
+    use crate::tests::compute_root_from_auth_path;
     use crate::{Altitude, Hashable, Position, Tree};
     use std::convert::TryFrom;
 

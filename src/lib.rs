@@ -295,28 +295,14 @@ pub trait Tree<H> {
     fn garbage_collect(&mut self);
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
+#[cfg(any(bench, test, feature = "test-dependencies"))]
+pub mod testing {
     #![allow(deprecated)]
-    use std::collections::BTreeSet;
-    use std::fmt::Debug;
-    use std::hash::Hasher;
-    use std::hash::SipHasher;
 
-    use super::bridgetree::BridgeTree;
-    use super::sample::{lazy_root, CompleteTree};
+    use proptest::prelude::*;
+    use std::hash::{Hasher, SipHasher};
+
     use super::{Altitude, Hashable, Position, Tree};
-
-    #[test]
-    fn position_altitudes() {
-        assert_eq!(Position(0).max_altitude(), Altitude(0));
-        assert_eq!(Position(1).max_altitude(), Altitude(0));
-        assert_eq!(Position(2).max_altitude(), Altitude(1));
-        assert_eq!(Position(3).max_altitude(), Altitude(1));
-        assert_eq!(Position(4).max_altitude(), Altitude(2));
-        assert_eq!(Position(7).max_altitude(), Altitude(2));
-        assert_eq!(Position(8).max_altitude(), Altitude(3));
-    }
 
     //
     // Types and utilities for shared example tests.
@@ -346,6 +332,167 @@ pub(crate) mod tests {
         fn combine(_: Altitude, a: &Self, b: &Self) -> Self {
             a.to_string() + b
         }
+    }
+
+    //
+    // Operations
+    //
+
+    #[derive(Clone, Debug)]
+    pub enum Operation<A> {
+        Append(A),
+        CurrentPosition,
+        CurrentLeaf,
+        Witness,
+        WitnessedLeaf(Position),
+        WitnessedPositions,
+        Unwitness(Position),
+        Checkpoint,
+        Rewind,
+        Authpath(Position, usize),
+        GarbageCollect,
+    }
+
+    use Operation::*;
+
+    pub fn append(x: &str) -> Operation<String> {
+        Operation::Append(x.to_string())
+    }
+
+    pub fn unwitness(pos: usize) -> Operation<String> {
+        Operation::Unwitness(Position::from(pos))
+    }
+
+    pub fn authpath(pos: usize, depth: usize) -> Operation<String> {
+        Operation::Authpath(Position::from(pos), depth)
+    }
+
+    impl<H: Hashable> Operation<H> {
+        pub fn apply<T: Tree<H>>(&self, tree: &mut T) -> Option<(Position, Vec<H>)> {
+            match self {
+                Append(a) => {
+                    assert!(tree.append(a), "append failed");
+                    None
+                }
+                CurrentPosition => None,
+                CurrentLeaf => None,
+                Witness => {
+                    assert!(tree.witness().is_some(), "witness failed");
+                    None
+                }
+                WitnessedLeaf(_) => None,
+                WitnessedPositions => None,
+                Unwitness(p) => {
+                    assert!(tree.remove_witness(*p), "remove witness failed");
+                    None
+                }
+                Checkpoint => {
+                    tree.checkpoint();
+                    None
+                }
+                Rewind => {
+                    assert!(tree.rewind(), "rewind failed");
+                    None
+                }
+                Authpath(p, d) => tree
+                    .root(*d)
+                    .and_then(|root| tree.authentication_path(*p, &root))
+                    .map(|xs| (*p, xs)),
+                GarbageCollect => None,
+            }
+        }
+
+        pub fn apply_all<T: Tree<H>>(
+            ops: &[Operation<H>],
+            tree: &mut T,
+        ) -> Option<(Position, Vec<H>)> {
+            let mut result = None;
+            for op in ops {
+                result = op.apply(tree);
+            }
+            result
+        }
+    }
+
+    pub fn arb_operation<G: Strategy + Clone>(
+        item_gen: G,
+        pos_gen: impl Strategy<Value = usize> + Clone,
+    ) -> impl Strategy<Value = Operation<G::Value>>
+    where
+        G::Value: Clone + 'static,
+    {
+        prop_oneof![
+            item_gen.prop_map(Operation::Append),
+            Just(Operation::Witness),
+            prop_oneof![
+                Just(Operation::CurrentLeaf),
+                Just(Operation::CurrentPosition),
+                Just(Operation::WitnessedPositions),
+            ],
+            Just(Operation::GarbageCollect),
+            pos_gen
+                .clone()
+                .prop_map(|i| Operation::WitnessedLeaf(Position::from(i))),
+            pos_gen
+                .clone()
+                .prop_map(|i| Operation::Unwitness(Position::from(i))),
+            Just(Operation::Checkpoint),
+            Just(Operation::Rewind),
+            pos_gen.prop_flat_map(|i| (0usize..10)
+                .prop_map(move |depth| Operation::Authpath(Position::from(i), depth))),
+        ]
+    }
+
+    pub fn apply_operation<H, T: Tree<H>>(tree: &mut T, op: Operation<H>) {
+        match op {
+            Append(value) => {
+                tree.append(&value);
+            }
+            Witness => {
+                tree.witness();
+            }
+            Unwitness(position) => {
+                tree.remove_witness(position);
+            }
+            Checkpoint => {
+                tree.checkpoint();
+            }
+            Rewind => {
+                tree.rewind();
+            }
+            CurrentPosition => {}
+            CurrentLeaf => {}
+            Authpath(_, _) => {}
+            WitnessedLeaf(_) => {}
+            WitnessedPositions => {}
+            GarbageCollect => {}
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::collections::BTreeSet;
+    use std::fmt::Debug;
+
+    use super::{
+        bridgetree::BridgeTree,
+        sample::{lazy_root, CompleteTree},
+        testing::{
+            append, arb_operation, authpath, unwitness, Operation, Operation::*, SipHashable,
+        },
+        Altitude, Hashable, Position, Tree,
+    };
+
+    #[test]
+    fn position_altitudes() {
+        assert_eq!(Position(0).max_altitude(), Altitude(0));
+        assert_eq!(Position(1).max_altitude(), Altitude(0));
+        assert_eq!(Position(2).max_altitude(), Altitude(1));
+        assert_eq!(Position(3).max_altitude(), Altitude(1));
+        assert_eq!(Position(4).max_altitude(), Altitude(2));
+        assert_eq!(Position(7).max_altitude(), Altitude(2));
+        assert_eq!(Position(8).max_altitude(), Altitude(3));
     }
 
     //
@@ -833,86 +980,6 @@ pub(crate) mod tests {
         }
     }
 
-    //
-    // Operations
-    //
-
-    #[derive(Clone, Debug)]
-    pub enum Operation<A> {
-        Append(A),
-        CurrentPosition,
-        CurrentLeaf,
-        Witness,
-        WitnessedLeaf(Position),
-        WitnessedPositions,
-        Unwitness(Position),
-        Checkpoint,
-        Rewind,
-        Authpath(Position, usize),
-        GarbageCollect,
-    }
-
-    use Operation::*;
-
-    fn append(x: &str) -> Operation<String> {
-        Operation::Append(x.to_string())
-    }
-
-    fn unwitness(pos: usize) -> Operation<String> {
-        Operation::Unwitness(Position::from(pos))
-    }
-
-    fn authpath(pos: usize, depth: usize) -> Operation<String> {
-        Operation::Authpath(Position::from(pos), depth)
-    }
-
-    impl<H: Hashable> Operation<H> {
-        pub fn apply<T: Tree<H>>(&self, tree: &mut T) -> Option<(Position, Vec<H>)> {
-            match self {
-                Append(a) => {
-                    assert!(tree.append(a), "append failed");
-                    None
-                }
-                CurrentPosition => None,
-                CurrentLeaf => None,
-                Witness => {
-                    assert!(tree.witness().is_some(), "witness failed");
-                    None
-                }
-                WitnessedLeaf(_) => None,
-                WitnessedPositions => None,
-                Unwitness(p) => {
-                    assert!(tree.remove_witness(*p), "remove witness failed");
-                    None
-                }
-                Checkpoint => {
-                    tree.checkpoint();
-                    None
-                }
-                Rewind => {
-                    assert!(tree.rewind(), "rewind failed");
-                    None
-                }
-                Authpath(p, d) => tree
-                    .root(*d)
-                    .and_then(|root| tree.authentication_path(*p, &root))
-                    .map(|xs| (*p, xs)),
-                GarbageCollect => None,
-            }
-        }
-
-        pub fn apply_all<T: Tree<H>>(
-            ops: &[Operation<H>],
-            tree: &mut T,
-        ) -> Option<(Position, Vec<H>)> {
-            let mut result = None;
-            for op in ops {
-                result = op.apply(tree);
-            }
-            result
-        }
-    }
-
     pub(crate) fn compute_root_from_auth_path<H: Hashable>(
         value: H,
         position: Position,
@@ -1173,61 +1240,6 @@ pub(crate) mod tests {
     }
 
     use proptest::prelude::*;
-
-    pub fn arb_operation<G: Strategy + Clone>(
-        item_gen: G,
-        pos_gen: impl Strategy<Value = usize> + Clone,
-    ) -> impl Strategy<Value = Operation<G::Value>>
-    where
-        G::Value: Clone + 'static,
-    {
-        prop_oneof![
-            item_gen.prop_map(Operation::Append),
-            Just(Operation::Witness),
-            prop_oneof![
-                Just(Operation::CurrentLeaf),
-                Just(Operation::CurrentPosition),
-                Just(Operation::WitnessedPositions),
-            ],
-            Just(Operation::GarbageCollect),
-            pos_gen
-                .clone()
-                .prop_map(|i| Operation::WitnessedLeaf(Position::from(i))),
-            pos_gen
-                .clone()
-                .prop_map(|i| Operation::Unwitness(Position::from(i))),
-            Just(Operation::Checkpoint),
-            Just(Operation::Rewind),
-            pos_gen.prop_flat_map(|i| (0usize..10)
-                .prop_map(move |depth| Operation::Authpath(Position::from(i), depth))),
-        ]
-    }
-
-    pub fn apply_operation<H, T: Tree<H>>(tree: &mut T, op: Operation<H>) {
-        match op {
-            Append(value) => {
-                tree.append(&value);
-            }
-            Witness => {
-                tree.witness();
-            }
-            Unwitness(position) => {
-                tree.remove_witness(position);
-            }
-            Checkpoint => {
-                tree.checkpoint();
-            }
-            Rewind => {
-                tree.rewind();
-            }
-            CurrentPosition => {}
-            CurrentLeaf => {}
-            Authpath(_, _) => {}
-            WitnessedLeaf(_) => {}
-            WitnessedPositions => {}
-            GarbageCollect => {}
-        }
-    }
 
     fn check_operations<H: Hashable + Ord + Clone + Debug>(
         ops: &[Operation<H>],
