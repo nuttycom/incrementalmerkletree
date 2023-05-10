@@ -518,11 +518,12 @@ impl<H: Hashable + Clone, const DEPTH: u8> CommitmentTree<H, DEPTH> {
 #[cfg(feature = "test-dependencies")]
 pub mod testing {
     use core::fmt::Debug;
-    use proptest::prelude::*; use proptest::collection::vec;
+    use proptest::collection::vec;
+    use proptest::prelude::*;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::Hasher;
 
-    use crate::{Hashable, Level, frontier::{Frontier}};
+    use crate::{frontier::Frontier, Hashable, Level};
 
     impl<H: Hashable + Clone, const DEPTH: u8> crate::testing::Frontier<H>
         for super::Frontier<H, DEPTH>
@@ -559,11 +560,7 @@ pub mod testing {
         }
     }
 
-    pub fn arb_frontier<
-        H: Hashable + Clone + Debug,
-        T: Strategy<Value = H>,
-        const DEPTH: u8,
-    >(
+    pub fn arb_frontier<H: Hashable + Clone + Debug, T: Strategy<Value = H>, const DEPTH: u8>(
         min_size: usize,
         arb_node: T,
     ) -> impl Strategy<Value = Frontier<H, DEPTH>> {
@@ -577,9 +574,8 @@ pub mod testing {
         })
     }
 
-
     #[cfg(feature = "legacy-api")]
-    use {crate::frontier::CommitmentTree};
+    use crate::frontier::CommitmentTree;
 
     #[cfg(feature = "legacy-api")]
     pub fn arb_commitment_tree<
