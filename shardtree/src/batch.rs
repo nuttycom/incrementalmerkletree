@@ -229,7 +229,7 @@ impl<H: Hashable + Clone + PartialEq> LocatedPrunableTree<H> {
                 break;
             }
         }
-        trace!("Initial fragments: {:?}", fragments);
+        //trace!("Initial fragments: {:?}", fragments);
 
         if position > position_range.start {
             let last_position = position - 1;

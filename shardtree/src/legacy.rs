@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Debug};
 
 use incrementalmerkletree::{witness::IncrementalWitness, Address, Hashable, Level, Retention};
 
@@ -167,7 +167,7 @@ impl<H: Hashable + Clone + PartialEq> LocatedPrunableTree<H> {
     ///
     /// Returns a copy of this tree updated to include the witness nodes, any partial supertree that is
     /// produced from nodes "higher" in the witness tree
-    pub fn insert_witness_nodes<C, const DEPTH: u8>(
+    pub fn insert_witness_nodes<C: Debug, const DEPTH: u8>(
         &self,
         witness: IncrementalWitness<H, DEPTH>,
         checkpoint_id: C,

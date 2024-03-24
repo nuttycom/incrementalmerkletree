@@ -27,7 +27,7 @@ use either::Either;
 use incrementalmerkletree::frontier::Frontier;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use tracing::trace;
+use tracing::{debug, trace};
 
 use incrementalmerkletree::{
     frontier::NonEmptyFrontier, Address, Hashable, Level, MerklePath, Position, Retention,
@@ -552,14 +552,19 @@ impl<
                 !to_clear.is_empty()
             });
 
-            trace!(
-                "Removing checkpoints {:?}, pruning subtrees {:?}",
-                checkpoints_to_delete,
-                clear_positions,
+            debug!(
+                "Removing {:?} checkpoints, pruning {:?} subtrees",
+                checkpoints_to_delete.len(),
+                clear_positions.len(),
             );
 
             // Prune each affected subtree
             for (subtree_addr, positions) in clear_positions.into_iter() {
+                trace!(
+                    "Clearing {} positions in {:?}",
+                    positions.len(),
+                    subtree_addr
+                );
                 let cleared = self
                     .store
                     .get_shard(subtree_addr)

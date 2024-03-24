@@ -1,13 +1,14 @@
 //! Helpers for working with trees that support pruning unneeded leaves and branches.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use bitflags::bitflags;
 use incrementalmerkletree::{
     frontier::NonEmptyFrontier, Address, Hashable, Level, Position, Retention,
 };
-use tracing::trace;
+use tracing::{debug, trace};
 
 use crate::error::{InsertionError, QueryError};
 use crate::{LocatedTree, Node, Tree};
@@ -279,7 +280,7 @@ impl<H: Hashable + Clone + PartialEq> PrunableTree<H> {
             }
         }
 
-        trace!(this = ?self, other = ?other, "Merging subtrees");
+        //trace!(this = ?self, other = ?other, "Merging subtrees");
         go(root_addr, self, other)
     }
 
@@ -835,10 +836,10 @@ impl<H: Hashable + Clone + PartialEq> LocatedPrunableTree<H> {
 
                         let p = to_clear.partition_point(|(p, _)| p < &l_addr.position_range_end());
                         trace!(
-                            "In {:?}, partitioned: {:?} {:?}",
+                            "In {:?}, partitioned: ({:?}, {:?})",
                             root_addr,
-                            &to_clear[0..p],
-                            &to_clear[p..],
+                            &to_clear[0..p].len(),
+                            &to_clear[p..].len(),
                         );
                         Tree::unite(
                             l_addr.level(),
@@ -847,8 +848,13 @@ impl<H: Hashable + Clone + PartialEq> LocatedPrunableTree<H> {
                             go(&to_clear[p..], r_addr, right),
                         )
                     }
-                    Tree(Node::Leaf { value: (h, r) }) => {
-                        trace!("In {:?}, clearing {:?}", root_addr, to_clear);
+                    Tree(l @ Node::Leaf { value: (h, r) }) => {
+                        trace!(
+                            "In {:?}, clearing {} checkpoints from {:?}",
+                            root_addr,
+                            to_clear.len(),
+                            l
+                        );
                         // When we reach a leaf, we should be down to just a single position
                         // which should correspond to the last level-0 child of the address's
                         // subtree range; if it's a checkpoint this will always be the case for
