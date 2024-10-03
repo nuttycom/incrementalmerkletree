@@ -431,6 +431,55 @@ impl<H: Hashable + Clone + PartialEq> LocatedPrunableTree<H> {
         result
     }
 
+    // Returns the leaf and partial frontier at the specified position, if the leaf at that
+    // position is retained in the tree and all of its ommers are present up to the root.
+    pub fn frontier_at_position(&self, position: Position) -> Option<(H, Vec<H>)> {
+        // traverse down to the desired leaf position, and then construct
+        // the frontier on the way back up.
+        fn go<H: Hashable + Clone + PartialEq>(
+            root: &PrunableTree<H>,
+            root_addr: Address,
+            position: Position,
+        ) -> Option<(H, Vec<H>)> {
+            match &root.0 {
+                Node::Parent { left, right, .. } => {
+                    let (l_addr, r_addr) = root_addr.children().unwrap();
+                    if root_addr.level() > 1.into() {
+                        let r_start = r_addr.position_range_start();
+                        if position < r_start {
+                            // compute 
+                            let (leaf, mut ommers) = go(right.as_ref(), r_addr, position)?;
+                            left.as_ref()
+                                .root_hash(l_addr, l_addr.position_range_end())
+                                .ok()
+                                .map(|l_root| {
+                                    ommers.push(l_root);
+                                    (leaf, ommers)
+                                })
+                        } else {
+                            go(right.as_ref(), r_addr, position)
+                        }
+                    } else if position.is_right_child() {
+                        right.leaf_value().map(|r| (r.clone(), vec![]))
+                    } else {
+                        left.leaf_value().map(|l| (l.clone(), vec![]))
+                    }
+                }
+                _ => {
+                    // if we encounter a nil or leaf node, we were unable to descend
+                    // to the leaf at the desired position.
+                    None
+                }
+            }
+        }
+
+        if self.root_addr.position_range().contains(&position) {
+            go(&self.root, self.root_addr, position)
+        } else {
+            None
+        }
+    }
+
     /// Compute the witness for the leaf at the specified position.
     ///
     /// This tree will be truncated to the `truncate_at` position, and then empty roots
